@@ -59,7 +59,7 @@ import tifffile
 from typing import List, Optional, Tuple
 from skimage.transform import resize as resize_sk
 from skimage.transform import warp as warp_sk
-
+from tqdm import tqdm
 import caiman as cm
 import caiman.base.movies
 import caiman.motion_correction
@@ -395,7 +395,7 @@ class MotionCorrect(object):
                 self.z_shifts_els += _z_shifts_els
             self.coord_shifts_els += _coord_shifts_els
 
-    def apply_shifts_movie(self, fname, rigid_shifts:bool=None, save_memmap:bool=False,
+    def apply_shifts_movie(self,fname,rigid_shifts:bool=None, save_memmap:bool=False,
                            save_base_name:str='MC', order:str='F', remove_min:bool=True):
         """
         Applies shifts found by registering one file to a different file. Useful
@@ -429,8 +429,15 @@ class MotionCorrect(object):
                 caiman movie object with applied shifts (not memory mapped)
         """
 
+        # Load data
         Y = cm.load(fname).astype(np.float32)
-        if remove_min: 
+
+        # Create memory mapped data
+        mmapName = os.path.dirname(fname) + '/registered.mmap'
+        big_mov = np.memmap(mmapName, mode='w+', dtype=np.float32,
+                    shape = Y.shape,order = 'F')
+
+        if remove_min:
             ymin = Y.min()
             if ymin < 0:
                 Y -= Y.min()
@@ -439,13 +446,27 @@ class MotionCorrect(object):
             logging.warning('The rigid_shifts flag is deprecated and it is ' +
                             'being ignored. The value is read directly from' +
                             ' mc.pw_rigid and is current set to the opposite' +
-                            ' of {}'.format(self.pw_rigid))            
-        
+                            ' of {}'.format(self.pw_rigid))
+
         if self.pw_rigid is False:
             if self.is3D:
-                m_reg = [apply_shifts_dft(img, (sh[0], sh[1], sh[2]), 0,
-                                          is_freq=False, border_nan=self.border_nan)
-                         for img, sh in zip(Y, self.shifts_rig)]
+                # Perform memory-efficient transformations.
+                # Before, full movie was loaded into memory during list comprehension.
+                print('Applying shifts...')
+
+                for ii,(img,sh) in enumerate(tqdm(zip(Y,self.shifts_rig))):
+                    transfIm = apply_shifts_dft(img,(sh[0],sh[1],sh[2]),0,
+                        is_freq=False,border_nan=self.border_nan)
+                    big_mov[ii][:] = transfIm[:]
+                    del transfIm
+
+                print('Done')
+                movShape = big_mov.shape
+                big_mov.flush()
+                del big_mov
+
+                return movShape
+
             elif self.shifts_opencv:
                 m_reg = [apply_shift_iteration(img, shift, border_nan=self.border_nan)
                          for img, shift in zip(Y, self.shifts_rig)]
@@ -632,7 +653,7 @@ def motion_correct_oneP_rigid(
         save_movie: bool
             whether to save the movie in memory mapped format
         border_nan : bool or string, optional
-            Specifies how to deal with borders. (True, False, 'copy', 'min')        
+            Specifies how to deal with borders. (True, False, 'copy', 'min')
 
     Returns:
         Motion correction object
@@ -1370,7 +1391,7 @@ def register_translation_3d(src_image, target_image, upsample_factor = 1,
 
     """
     Simple script for registering translation in 3D using an FFT approach.
-    
+
     Args:
         src_image : ndarray
             Reference image.
@@ -1923,7 +1944,7 @@ def apply_shifts_dft(src_freq, shifts, diffphase, is_freq=True, border_nan=True)
 def sliding_window(image, overlaps, strides):
     """ efficiently and lazily slides a window across the image
 
-    Args: 
+    Args:
         img:ndarray 2D
             image that needs to be slices
 
@@ -1953,7 +1974,7 @@ def sliding_window(image, overlaps, strides):
 def sliding_window_3d(image, overlaps, strides):
     """ efficiently and lazily slides a window across the image
 
-    Args: 
+    Args:
         img:ndarray 3D
             image that needs to be slices
 
@@ -2032,7 +2053,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
             input image/movie
 
         gSig_filt:
-            size of the Gaussian filter 
+            size of the Gaussian filter
 
         freq: float
             cutoff frequency of the Butterworth filter
@@ -2042,7 +2063,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
 
     Returns:
         img: 2-d array or 3-d movie
-            image/movie after filtering            
+            image/movie after filtering
     """
     if freq is None or order is None:  # Gaussian
         ksize = tuple([(3 * i) // 2 * 2 + 1 for i in gSig_filt])
@@ -2057,7 +2078,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
                                 -1, ker2D, borderType=cv2.BORDER_REFLECT)
         else:  # movie
             return cm.movie(np.array([cv2.filter2D(np.array(img, dtype=np.float32),
-                                -1, ker2D, borderType=cv2.BORDER_REFLECT) for img in img_orig]))     
+                                -1, ker2D, borderType=cv2.BORDER_REFLECT) for img in img_orig]))
     else:  # Butterworth
         rows, cols = img_orig.shape[-2:]
         xx, yy = np.meshgrid(np.arange(cols, dtype=np.float32) - cols / 2,
@@ -2067,7 +2088,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
             return cv2.idft(cv2.dft(img_orig, flags=cv2.DFT_COMPLEX_OUTPUT) *
                             H[..., None])[..., 0] / (rows*cols)
         else:  # movie
-            return cm.movie(np.array([cv2.idft(cv2.dft(img, flags=cv2.DFT_COMPLEX_OUTPUT) * 
+            return cm.movie(np.array([cv2.idft(cv2.dft(img, flags=cv2.DFT_COMPLEX_OUTPUT) *
                             H[..., None])[..., 0] for img in img_orig]) / (rows*cols))
 
 def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=None, newstrides=None, upsample_factor_grid=4,
@@ -2315,7 +2336,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
                 pass
         return new_img - add_to_movie, total_shifts, start_step, xy_grid
 
-#%%        
+#%%
 def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, overlaps:Tuple, max_shifts:Tuple, newoverlaps:Optional[Tuple]=None, newstrides:Optional[Tuple]=None, upsample_factor_grid:int=4,
                      upsample_factor_fft:int=10, show_movie:bool=False, max_deviation_rigid:int=2, add_to_movie:int=0, shifts_opencv:bool=True, gSig_filt=None,
                      use_cuda:bool=False, border_nan:bool=True):
@@ -2530,7 +2551,7 @@ def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, over
             half_overlap_x = np.int(newoverlaps[0] / 2)
             half_overlap_y = np.int(newoverlaps[1] / 2)
             half_overlap_z = np.int(newoverlaps[2] / 2)
-            
+
             for (x, y, z), (idx_0, idx_1, idx_2), im, (_, _, _), weight_mat in zip(start_step, xyz_grid, imgs, total_shifts, weight_matrix):
 
                 if idx_0 == 0:
@@ -2593,7 +2614,7 @@ def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_di
         disable_tqdm = False
     else:
         disable_tqdm = True
-        
+
     vmin, vmax = -max_flow, max_flow
     m = cm.load(fname)
     if gSig_filt is not None:
@@ -2794,7 +2815,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
         if gSig_filt is not None:
             m = cm.movie(
                 np.array([high_pass_filter_space(m_, gSig_filt) for m_ in m]))
-        if is3D:     
+        if is3D:
             # TODO - motion_correct_3d needs to be implemented in movies.py
             template = caiman.motion_correction.bin_median_3d(m) # motion_correct_3d has not been implemented yet - instead initialize to just median image
 #            template = caiman.motion_correction.bin_median_3d(
@@ -2838,7 +2859,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
                                                              use_cuda=use_cuda, border_nan=border_nan, var_name_hdf5=var_name_hdf5, is3D=is3D,
                                                              indices=indices)
         if is3D:
-            new_templ = np.nanmedian(np.stack([r[-1] for r in res_rig]), 0)           
+            new_templ = np.nanmedian(np.stack([r[-1] for r in res_rig]), 0)
         else:
             new_templ = np.nanmedian(np.dstack([r[-1] for r in res_rig]), -1)
         if gSig_filt is not None:
@@ -2855,7 +2876,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
         shifts += [sh[0] for sh in shift_info[:len(idxs)]]
  #       shifts += [[sh[0][0], sh[0][1]] for sh in shift_info[:len(idxs)]]
  #       if is3D:
- #           shifts += [[sh[0][0], sh[0][1], sh[0][2]] for sh in shift_info[:len(idxs)]]            
+ #           shifts += [[sh[0][0], sh[0][1], sh[0][2]] for sh in shift_info[:len(idxs)]]
  #       else:
  #           shifts += [[sh[0][0], sh[0][1]] for sh in shift_info[:len(idxs)]]
 
@@ -3052,7 +3073,7 @@ def tile_and_correct_wrapper(params):
                                                                        shifts_opencv=shifts_opencv, gSig_filt=gSig_filt,
                                                                        use_cuda=use_cuda, border_nan=border_nan)
             shift_info.append([tuple(-np.array(total_shift)), start_step, xyz_grid])
-            
+
         else:
             mc[count], total_shift, start_step, xy_grid = tile_and_correct(img, template, strides, overlaps, max_shifts,
                                                                        add_to_movie=add_to_movie, newoverlaps=newoverlaps,
@@ -3111,7 +3132,7 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
         save_movie = False
     if template is None:
         raise Exception('Not implemented')
-    
+
     shape_mov = (np.prod(dims), T)
 #    if is3D:
 #        shape_mov = (d1 * d2 * d3, T)
