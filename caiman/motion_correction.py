@@ -432,10 +432,15 @@ class MotionCorrect(object):
         # Load data
         Y = cm.load(fname).astype(np.float32)
 
+        # Get file name
+        dims = Y.shape
+        fname_tot = caiman.paths.memmap_frames_filename(save_base_name,dims[1:],dims[0],order)
+
         # Create memory mapped data
-        mmapName = os.path.dirname(fname) + '/registered.mmap'
-        big_mov = np.memmap(mmapName, mode='w+', dtype=np.float32,
-                    shape = Y.shape,order = 'F')
+        baseDir = os.path.dirname(fname)
+        fullPath =  os.path.join(baseDir,fname_tot)
+        big_mov = np.memmap(fullPath, mode='w+', dtype=np.float32,
+                    shape = (np.prod(dims[1:]),dims[0]), order = order)
 
         if remove_min:
             ymin = Y.min()
@@ -451,21 +456,31 @@ class MotionCorrect(object):
         if self.pw_rigid is False:
             if self.is3D:
                 # Perform memory-efficient transformations.
-                # Before, full movie was loaded into memory during list comprehension.
+                # Before, script was eating up RAM during list comprehension.
                 print('Applying shifts...')
 
                 for ii,(img,sh) in enumerate(tqdm(zip(Y,self.shifts_rig))):
                     transfIm = apply_shifts_dft(img,(sh[0],sh[1],sh[2]),0,
                         is_freq=False,border_nan=self.border_nan)
-                    big_mov[ii][:] = transfIm[:]
+                    big_mov[:,ii] = np.ravel(transfIm[:],order='F')
                     del transfIm
 
-                print('Done')
-                movShape = big_mov.shape
                 big_mov.flush()
+
+                # Load movie
+                fnameNew = cm.save_memmap([fullPath], base_name='memmap_', order='C',
+                                           border_to_0=0, dview=self.dview)
+
+                # # Load file (T,X,Y,Z)
+                # Yr, dims, T = cm.load_memmap(fnameNew)
+                # images = np.reshape(Yr.T, [T] + list(dims), order='F')
+                # mu = np.mean(images,axis=0)
+                # import pdb; pdb.set_trace()
+                print('Done')
+
                 del big_mov
 
-                return movShape
+                return
 
             elif self.shifts_opencv:
                 m_reg = [apply_shift_iteration(img, shift, border_nan=self.border_nan)
