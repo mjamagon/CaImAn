@@ -386,7 +386,7 @@ def setup_cluster(backend: str = 'multiprocessing',
                 stop_server()
             except:
                 logger.debug('Nothing to stop')
-            slurm_script = '/mnt/home/agiovann/SOFTWARE/CaImAn/SLURM/slurmStart.sh' # FIXME: Make this a documented environment variable
+            slurm_script = '/jukebox/murthy/Max/code/CaImAn/SLURM/slurmStart.sh' # FIXME: Make this a documented environment variable
             logger.info([str(n_processes), slurm_script])
             start_server(slurm_script=slurm_script, ncpus=n_processes)
             pdir, profile = os.environ['IPPPDIR'], os.environ['IPPPROFILE']
