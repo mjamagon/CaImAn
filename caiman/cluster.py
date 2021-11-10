@@ -241,7 +241,7 @@ def start_server(slurm_script: str = None, ipcluster: str = "ipcluster", ncpus: 
     else:
         shell_source(slurm_script)
         pdir, profile = os.environ['IPPPDIR'], os.environ['IPPPROFILE']
-        logger.debug([pdir, profile])
+        # logger.debug([pdir, profile])
         c = Client(ipython_dir=pdir, profile=profile)
         ee = c[:]
         ne = len(ee)
@@ -351,6 +351,8 @@ def setup_cluster(backend: str = 'multiprocessing',
                   n_processes: int = None,
                   single_thread: bool = False,
                   ignore_preexisting: bool = False,
+                  profile = None,
+                  nEngines = None,
                   maxtasksperchild: int = None) -> Tuple[Any, Any, Optional[int]]:
     """Setup and/or restart a parallel cluster.
     Args:
@@ -367,6 +369,10 @@ def setup_cluster(backend: str = 'multiprocessing',
         dview: ipyparallel dview object, or for multiprocessing: Pool object
         n_processes: number of workers in dview. None means guess at number of machine cores.
     """
+    if profile is not None:
+        c = Client(profile=profile)
+        dview = c[:]
+        return c,dview,n_processes
 
     if n_processes is None:
         if backend == 'SLURM':
