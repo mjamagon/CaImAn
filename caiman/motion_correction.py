@@ -504,12 +504,36 @@ class MotionCorrect(object):
                 x_grid, y_grid, z_grid = np.meshgrid(np.arange(0., dims[1]).astype(
                     np.float32), np.arange(0., dims[0]).astype(np.float32),
                     np.arange(0., dims[2]).astype(np.float32))
-                m_reg = [warp_sk(img, np.stack((resize_sk(shiftX.astype(np.float32), dims) + y_grid,
-                                 resize_sk(shiftY.astype(np.float32), dims) + x_grid,
-                                 resize_sk(shiftZ.astype(np.float32), dims) + z_grid), axis=0),
-                                 order=3, mode='constant')
-                         for img, shiftX, shiftY, shiftZ in zip(Y, shifts_x, shifts_y, shifts_z)]
-                                 # borderValue=add_to_movie)
+
+                print('Applying shifts...')
+
+                for ii,(img, shiftX, shiftY, shiftZ) in enumerate(tqdm(zip(Y, shifts_x, shifts_y, shifts_z))):
+                    m_reg = warp_sk(img, np.stack((resize_sk(shiftX.astype(np.float32), dims) + y_grid,
+                                     resize_sk(shiftY.astype(np.float32), dims) + x_grid,
+                                     resize_sk(shiftZ.astype(np.float32), dims) + z_grid), axis=0),
+                                     order=3, mode='constant')
+                    big_mov[:,ii] = np.ravel(m_reg[:],order='F')
+                    del m_reg
+
+                big_mov.flush()
+
+                # Load movie
+                fnameNew = cm.save_memmap([fullPath], base_name='memmap_', order='C',
+                                           border_to_0=0, dview=self.dview)
+                print('Done')
+
+                del big_mov
+
+                return
+
+                # Original version that eats memory
+                # m_reg = [warp_sk(img, np.stack((resize_sk(shiftX.astype(np.float32), dims) + y_grid,
+                #                  resize_sk(shiftY.astype(np.float32), dims) + x_grid,
+                #                  resize_sk(shiftZ.astype(np.float32), dims) + z_grid), axis=0),
+                #                  order=3, mode='constant')
+                #          for img, shiftX, shiftY, shiftZ in zip(Y, shifts_x, shifts_y, shifts_z)]
+                #                  # borderValue=add_to_movie)
+
             else:
                 xy_grid = [(it[0], it[1]) for it in sliding_window(Y[0], self.overlaps, self.strides)]
                 dims_grid = tuple(np.max(np.stack(xy_grid, axis=1), axis=1) - np.min(
@@ -3182,15 +3206,17 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
             use_cuda, border_nan, var_name_hdf5, is3D, indices])
 
     if dview is not None:
-        logging.info('** Starting parallel motion correction **')
+        print('Starting parallel motion correction')
         if HAS_CUDA and use_cuda:
             res = dview.map(tile_and_correct_wrapper,pars)
             dview.map(close_cuda_process, range(len(pars)))
         elif 'multiprocessing' in str(type(dview)):
             res = dview.map_async(tile_and_correct_wrapper, pars).get(4294967)
         else:
-            res = dview.map_sync(tile_and_correct_wrapper, pars)
-        logging.info('** Finished parallel motion correction **')
+            ar = dview.map_async(tile_and_correct_wrapper, pars)
+            res = ar.get()
+
+        print('Finished parallel motion correction')
     else:
         res = list(map(tile_and_correct_wrapper, pars))
 
