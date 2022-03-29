@@ -1409,7 +1409,7 @@ def load(file_name: Union[str, List[str]],
          right=0,
          channel=None,
          outtype=np.float32,
-         mode: str = None, # r, r+, etc. for mmap reading 
+         mode: str = None, # r, r+, etc. for mmap reading
          returnMap: bool = False, # return mmap only, not caiman movie
          is3D: bool = False) -> Any:
     """
@@ -1717,10 +1717,11 @@ def load(file_name: Union[str, List[str]],
                 os.path.join(                  # type: ignore # same dims typing issue as above
                     os.path.split(file_name)[0], filename),mode=mode)
 
+            images = np.reshape(Yr.T, [T] + list(dims), order='F')
+
             if returnMap:
                 return Yr
 
-            images = np.reshape(Yr.T, [T] + list(dims), order='F')
             if subindices is not None:
                 images = images[subindices]
 
