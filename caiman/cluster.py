@@ -230,7 +230,7 @@ def start_server(slurm_script: str = None, ipcluster: str = "ipcluster", ncpus: 
         # Check that all processes have started
         client = ipyparallel.Client()
         time.sleep(1.5)
-        while len(client) < ncpus:
+        while len(client) < int(ncpus):
             sys.stdout.write(".")                              # Give some visual feedback of things starting
             sys.stdout.flush()                                 # (de-buffered)
             time.sleep(0.5)
@@ -243,7 +243,7 @@ def start_server(slurm_script: str = None, ipcluster: str = "ipcluster", ncpus: 
         c = Client(ipython_dir=pdir, profile=profile)
         ee = c[:]
         ne = len(ee)
-        print(f'Running on {ne} engines.')
+        logger.info(f'Running on {ne} engines.')
         c.close()
         sys.stdout.write("start_server: done\n")
 
