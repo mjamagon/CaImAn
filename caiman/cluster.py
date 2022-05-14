@@ -34,6 +34,7 @@ import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
+import dill
 
 from .mmapping import load_memmap
 
@@ -369,6 +370,7 @@ def setup_cluster(backend: str = 'multiprocessing',
     """
     if profile is not None:
         c = Client(profile=profile)
+        c[:].use_dill()
         dview = c[:]
         return c,dview,n_processes
 
@@ -401,6 +403,7 @@ def setup_cluster(backend: str = 'multiprocessing',
             stop_server()
             start_server(ncpus=n_processes)
             c = Client()
+            c[:].use_dill()
             logger.info(f'Started ipyparallel cluster: Using {len(c)} processes')
             dview = c[:len(c)]
 

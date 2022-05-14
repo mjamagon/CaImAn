@@ -349,7 +349,7 @@ class MotionCorrect(object):
         Raises:
             Exception: 'Error: Template contains NaNs, Please review the parameters'
         """
-
+        print('\n Running pw rigid motion correction \n')
         num_iter = 1
         if template is None:
             logging.info('Generating template by rigid motion correction')
